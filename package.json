@@ -1,0 +1,22 @@
+{
+  "name": "xhsocr",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test && npm run build"
+  },
+  "devDependencies": {
+    "@types/tampermonkey": "^5.0.4",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.1.0",
+    "vite-plugin-monkey": "^5.0.9",
+    "vitest": "^3.1.1"
+  }
+}
+
