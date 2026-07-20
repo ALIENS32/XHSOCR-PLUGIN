@@ -15,6 +15,16 @@ const MAX_IMAGES_PER_BATCH = 1;
 const MAX_BATCH_BYTES = 18 * 1024 * 1024;
 const OCR_TIMEOUT_MS = 240_000;
 
+export const DEFAULT_OCR_PROMPT = [
+  "First make a quick visual decision: OCR only when text is a primary, meaningful part of the image.",
+  "Return an empty string immediately for ordinary photos, selfies, scenery, product/lifestyle images, artwork, or illustrations that are not intended to convey textual information.",
+  "Also return an empty string when the only text is incidental, such as a watermark, logo, username overlay, camera timestamp, UI label, price tag, packaging label, or distant sign.",
+  "Do transcribe text-centric content such as documents, slides, posters, infographics, chat records, and screenshots whose main information is text.",
+  "For images that qualify, transcribe all meaningful visible text faithfully.",
+  "Preserve reasonable reading order and line breaks. Do not summarize, translate, describe, or correct the text.",
+  "Do not explain the decision or describe skipped images; use an empty string as the only skip marker."
+].join("\n");
+
 export async function mapConcurrent<T, R>(items: T[], concurrency: number, worker: (item: T, index: number) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
   let nextIndex = 0;
@@ -260,7 +270,7 @@ export class OpenAiOcrProvider implements OcrProvider {
         // Keep each image in one independent pipeline so a slow download cannot
         // delay OCR requests for images that are already ready.
         const prepared = await prepareImage(image);
-        const [result] = await this.recognizeBatch([prepared], options.model ?? "gpt-5-mini");
+        const [result] = await this.recognizeBatch([prepared], options.model ?? "gpt-5-mini", options.prompt);
         return result ?? { imageId: image.id, text: "", error: "未返回 OCR 结果" };
       } catch (error) {
         return { imageId: image.id, text: "", error: safeError(error) };
@@ -273,17 +283,12 @@ export class OpenAiOcrProvider implements OcrProvider {
     return { results };
   }
 
-  private async recognizeBatch(images: PreparedImage[], model: string): Promise<OcrImageResult[]> {
+  private async recognizeBatch(images: PreparedImage[], model: string, prompt?: string): Promise<OcrImageResult[]> {
+    const effectivePrompt = prompt?.trim() || DEFAULT_OCR_PROMPT;
     const content: Array<Record<string, unknown>> = [{
       type: "input_text",
       text: [
-        "First make a quick visual decision: OCR only when text is a primary, meaningful part of the image.",
-        "Return an empty string immediately for ordinary photos, selfies, scenery, product/lifestyle images, artwork, or illustrations that are not intended to convey textual information.",
-        "Also return an empty string when the only text is incidental, such as a watermark, logo, username overlay, camera timestamp, UI label, price tag, packaging label, or distant sign.",
-        "Do transcribe text-centric content such as documents, slides, posters, infographics, chat records, and screenshots whose main information is text.",
-        "For images that qualify, transcribe all meaningful visible text faithfully.",
-        "Preserve reasonable reading order and line breaks. Do not summarize, translate, describe, or correct the text.",
-        "Do not explain the decision or describe skipped images; use an empty string as the only skip marker.",
+        effectivePrompt,
         `The image IDs, in order, are: ${images.map((image) => image.id).join(", ")}.`
       ].join("\n")
     }];

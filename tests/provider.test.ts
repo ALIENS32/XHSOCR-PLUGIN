@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createBatches, mapConcurrent, OpenAiOcrProvider, parseResponsesPayload, parseResponsesStream, requestFailureMessage, responsesEndpoint, streamRequest } from "../src/openai-provider";
+import { createBatches, DEFAULT_OCR_PROMPT, mapConcurrent, OpenAiOcrProvider, parseResponsesPayload, parseResponsesStream, requestFailureMessage, responsesEndpoint, streamRequest } from "../src/openai-provider";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -122,6 +122,60 @@ describe("OpenAiOcrProvider", () => {
     const prompt = postBodies[0]?.input?.[0]?.content?.[0]?.text ?? "";
     expect(prompt).toContain("OCR only when text is a primary, meaningful part");
     expect(prompt).toContain("empty string as the only skip marker");
+  });
+
+  it("uses a one-time custom prompt without including the default prompt", async () => {
+    let sentPrompt = "";
+    vi.stubGlobal("GM_xmlhttpRequest", (details: Tampermonkey.Request) => {
+      if (details.method === "GET") {
+        queueMicrotask(() => details.onload?.call({} as never, {
+          response: new Blob(["image"]), responseText: "", status: 200, statusText: "OK"
+        } as Tampermonkey.Response<Blob>));
+        return;
+      }
+      const body = JSON.parse(String(details.data)) as { input: Array<{ content: Array<{ text?: string }> }> };
+      sentPrompt = body.input[0]?.content[0]?.text ?? "";
+      queueMicrotask(() => details.onload?.call({} as never, {
+        response: { output_text: JSON.stringify({ results: [{ image_id: "one", text: "ok" }] }) },
+        responseText: "",
+        status: 200,
+        statusText: "OK"
+      } as Tampermonkey.Response<object>));
+    });
+
+    await new OpenAiOcrProvider("test-key").recognize([
+      { id: "one", index: 0, url: "https://images.example/one" }
+    ], { prompt: "  Extract only handwritten Chinese.  " });
+
+    expect(sentPrompt).toContain("Extract only handwritten Chinese.");
+    expect(sentPrompt).toContain("The image IDs, in order, are: one.");
+    expect(sentPrompt).not.toContain(DEFAULT_OCR_PROMPT);
+  });
+
+  it("falls back to the default prompt when the one-time prompt is blank", async () => {
+    let sentPrompt = "";
+    vi.stubGlobal("GM_xmlhttpRequest", (details: Tampermonkey.Request) => {
+      if (details.method === "GET") {
+        queueMicrotask(() => details.onload?.call({} as never, {
+          response: new Blob(["image"]), responseText: "", status: 200, statusText: "OK"
+        } as Tampermonkey.Response<Blob>));
+        return;
+      }
+      const body = JSON.parse(String(details.data)) as { input: Array<{ content: Array<{ text?: string }> }> };
+      sentPrompt = body.input[0]?.content[0]?.text ?? "";
+      queueMicrotask(() => details.onload?.call({} as never, {
+        response: { output_text: JSON.stringify({ results: [{ image_id: "one", text: "ok" }] }) },
+        responseText: "",
+        status: 200,
+        statusText: "OK"
+      } as Tampermonkey.Response<object>));
+    });
+
+    await new OpenAiOcrProvider("test-key").recognize([
+      { id: "one", index: 0, url: "https://images.example/one" }
+    ], { prompt: "   \n  " });
+
+    expect(sentPrompt).toContain(DEFAULT_OCR_PROMPT);
   });
 
   it("keeps successful OCR results when another concurrent request fails", async () => {

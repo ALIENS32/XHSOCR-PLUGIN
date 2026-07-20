@@ -64,6 +64,15 @@
     }
   }
   const OCR_TIMEOUT_MS = 24e4;
+  const DEFAULT_OCR_PROMPT = [
+    "First make a quick visual decision: OCR only when text is a primary, meaningful part of the image.",
+    "Return an empty string immediately for ordinary photos, selfies, scenery, product/lifestyle images, artwork, or illustrations that are not intended to convey textual information.",
+    "Also return an empty string when the only text is incidental, such as a watermark, logo, username overlay, camera timestamp, UI label, price tag, packaging label, or distant sign.",
+    "Do transcribe text-centric content such as documents, slides, posters, infographics, chat records, and screenshots whose main information is text.",
+    "For images that qualify, transcribe all meaningful visible text faithfully.",
+    "Preserve reasonable reading order and line breaks. Do not summarize, translate, describe, or correct the text.",
+    "Do not explain the decision or describe skipped images; use an empty string as the only skip marker."
+  ].join("\n");
   async function mapConcurrent(items, concurrency, worker) {
     const results = new Array(items.length);
     let nextIndex = 0;
@@ -172,7 +181,7 @@
         (_a = options.onProgress) == null ? void 0 : _a.call(options, completed, images.length, "ocr", active);
         try {
           const prepared = await prepareImage(image);
-          const [result] = await this.recognizeBatch([prepared], options.model ?? "gpt-5-mini");
+          const [result] = await this.recognizeBatch([prepared], options.model ?? "gpt-5-mini", options.prompt);
           return result ?? { imageId: image.id, text: "", error: "未返回 OCR 结果" };
         } catch (error) {
           return { imageId: image.id, text: "", error: safeError(error) };
@@ -184,17 +193,12 @@
       });
       return { results };
     }
-    async recognizeBatch(images, model) {
+    async recognizeBatch(images, model, prompt) {
+      const effectivePrompt = (prompt == null ? void 0 : prompt.trim()) || DEFAULT_OCR_PROMPT;
       const content = [{
         type: "input_text",
         text: [
-          "First make a quick visual decision: OCR only when text is a primary, meaningful part of the image.",
-          "Return an empty string immediately for ordinary photos, selfies, scenery, product/lifestyle images, artwork, or illustrations that are not intended to convey textual information.",
-          "Also return an empty string when the only text is incidental, such as a watermark, logo, username overlay, camera timestamp, UI label, price tag, packaging label, or distant sign.",
-          "Do transcribe text-centric content such as documents, slides, posters, infographics, chat records, and screenshots whose main information is text.",
-          "For images that qualify, transcribe all meaningful visible text faithfully.",
-          "Preserve reasonable reading order and line breaks. Do not summarize, translate, describe, or correct the text.",
-          "Do not explain the decision or describe skipped images; use an empty string as the only skip marker.",
+          effectivePrompt,
           `The image IDs, in order, are: ${images.map((image) => image.id).join(", ")}.`
         ].join("\n")
       }];
@@ -280,7 +284,7 @@
 .xhsocr-panel{position:fixed;right:20px;bottom:76px;width:min(520px,calc(100vw - 32px));max-height:calc(100vh - 110px);overflow:auto;background:#fff;border:1px solid #ddd;border-radius:14px;box-shadow:0 12px 40px #0004;padding:16px;font-size:14px;line-height:1.5}
 .xhsocr-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.xhsocr-head strong{font-size:17px}
 .xhsocr-row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.xhsocr-row button{border:1px solid #ccc;background:#fff;border-radius:8px;padding:7px 11px;cursor:pointer}.xhsocr-row button.primary{background:#ff2442;border-color:#ff2442;color:#fff}
-.xhsocr-field{display:block;margin:9px 0}.xhsocr-field span{display:block;margin-bottom:4px;color:#57606a}.xhsocr-field input{width:100%;padding:8px;border:1px solid #bbb;border-radius:7px}
+.xhsocr-field{display:block;margin:9px 0}.xhsocr-field span{display:block;margin-bottom:4px;color:#57606a}.xhsocr-field input,.xhsocr-field textarea{width:100%;padding:8px;border:1px solid #bbb;border-radius:7px}.xhsocr-field textarea{min-height:96px;resize:vertical;font:inherit}
 .xhsocr-status{padding:9px;background:#f6f8fa;border-radius:8px;margin:10px 0;white-space:pre-wrap}.xhsocr-error{background:#ffebe9;color:#82071e}
 .xhsocr-output{width:100%;min-height:300px;resize:vertical;border:1px solid #bbb;border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
 .xhsocr-note{font-size:12px;color:#656d76}.xhsocr-hidden{display:none}
@@ -310,6 +314,7 @@
       <div class="xhsocr-panel xhsocr-hidden">
         <div class="xhsocr-head"><strong>小红书 OCR</strong><button data-action="close" type="button">关闭</button></div>
         <div data-view="settings"></div>
+        <label class="xhsocr-field"><span>本次 OCR 提示词（留空使用默认提示词）</span><textarea data-field="prompt" placeholder="仅用于本次 OCR，不会保存或覆盖默认提示词"></textarea></label>
         <div class="xhsocr-status">准备就绪</div>
         <textarea class="xhsocr-output xhsocr-hidden" spellcheck="false" aria-label="Markdown result"></textarea>
         <div class="xhsocr-row">
@@ -435,6 +440,7 @@
       try {
         return await new OpenAiOcrProvider(settings.apiKey, settings.baseUrl).recognize(images, {
           model: settings.model,
+          prompt: this.panel.querySelector("[data-field='prompt']").value,
           onProgress: (completed, total, phase = "ocr", active = 0) => {
             progress = { completed, total, phase, active };
             render();

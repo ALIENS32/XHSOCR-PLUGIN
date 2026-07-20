@@ -36,6 +36,7 @@ export interface OcrBatchResult {
 
 export interface OcrOptions {
   model?: string;
+  prompt?: string;
   onProgress?: (completed: number, total: number, phase?: "download" | "ocr", active?: number) => void;
 }
 
